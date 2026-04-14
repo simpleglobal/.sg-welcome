@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "deny": [
+      "mcp__claude_ai_*"
+    ]
+  },
+  "enabledPlugins": {
+    "sg-simple@simpleglobal": true,
+    "sg-engage@simpleglobal": true,
+    "sg-manage@simpleglobal": true,
+    "sg-design@simpleglobal": true,
+    "sg-supply@simpleglobal": true,
+    "sg-create@simpleglobal": true,
+    "sg-checks@simpleglobal": true,
+    "sg-deploy@simpleglobal": true,
+    "sg-corpus@simpleglobal": true,
+    "sg-govern@simpleglobal": true
+  },
+  "extraKnownMarketplaces": {
+    "simpleglobal": {
+      "source": {
+        "source": "github",
+        "repo": "simpleglobal/.sg-plugins"
+      }
+    },
+    "simplemotion": {
+      "source": {
+        "source": "github",
+        "repo": "simplemotion/.sm-plugins"
+      }
+    }
+  },
+  "effortLevel": "high"
+}

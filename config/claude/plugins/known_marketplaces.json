@@ -1,0 +1,14 @@
+{
+  "simpleglobal": {
+    "source": {
+      "source": "github",
+      "repo": "simpleglobal/.sg-plugins"
+    }
+  },
+  "simplemotion": {
+    "source": {
+      "source": "github",
+      "repo": "simplemotion/.sm-plugins"
+    }
+  }
+}

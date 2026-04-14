@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "sg-mcp-xero": {
+      "disabled": true,
+      "command": "",
+      "args": [],
+      "env": {}
+    },
+    "sg-mcp-m365": {
+      "disabled": true,
+      "command": "",
+      "args": [],
+      "env": {}
+    },
+    "claude_ai_Asana": { "disabled": true },
+    "claude_ai_Atlassian": { "disabled": true },
+    "claude_ai_Box": { "disabled": true },
+    "claude_ai_Canva": { "disabled": true },
+    "claude_ai_Figma": { "disabled": true },
+    "claude_ai_HubSpot": { "disabled": true },
+    "claude_ai_Intercom": { "disabled": true },
+    "claude_ai_Linear": { "disabled": true },
+    "claude_ai_Microsoft_365": { "disabled": true },
+    "claude_ai_Notion": { "disabled": true },
+    "claude_ai_monday_com": { "disabled": true }
+  }
+}

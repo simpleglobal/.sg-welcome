@@ -1,0 +1,10 @@
+[user]
+	name = {{USER_NAME}}
+	email = {{USER_EMAIL}}
+[url "https://github.com/"]
+	insteadOf = git@github.com:
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true
