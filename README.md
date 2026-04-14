@@ -69,7 +69,57 @@ gh repo create SimpleGlobal-9200-0000-00-Employees/9200-XXXX-SG-Firstname-Lastna
   --description "Employee home directory for Firstname Lastname"
 ```
 
-4. Share the curl command with the new exec.
+4. Provision MCP credentials on their employee repo:
+
+```bash
+REPO="SimpleGlobal-9200-0000-00-Employees/9200-XXXX-SG-Firstname-Lastname"
+
+# Copy the provision workflow into their repo
+gh api repos/$REPO/contents/.github/workflows/provision-credentials.yml \
+  --method PUT \
+  --field message="Add MCP credential provisioning workflow" \
+  --field content="$(base64 -i config/workflows/provision-credentials.yml)"
+
+# Set M365 credentials (certificate auth)
+gh secret set SG_M365_CLIENT_ID     -R $REPO -b "<azure-app-client-id>"
+gh secret set SG_M365_TENANT_ID     -R $REPO -b "<azure-tenant-id>"
+gh secret set SG_M365_USER_ID       -R $REPO -b "firstname.lastname@simplemotion.global"
+# Optional: pre-provision certificate (or employee generates locally via /sg-mcp-m365 --generate-cert)
+gh secret set SG_M365_CERTIFICATE   -R $REPO -b "$(cat cert.pem)"
+gh secret set SG_M365_PRIVATE_KEY   -R $REPO -b "$(cat key.pem)"
+gh secret set SG_M365_THUMBPRINT    -R $REPO -b "<cert-thumbprint>"
+
+# Set Xero credentials (OAuth)
+gh secret set SP_XERO_CLIENT_ID     -R $REPO -b "<xero-app-client-id>"
+gh secret set SP_XERO_CLIENT_SECRET -R $REPO -b "<xero-app-client-secret>"
+```
+
+5. Share the curl command with the new exec.
+
+### Post-onboarding: loading credentials to Keychain
+
+After the employee has run the curl command and set up their Mac:
+
+```bash
+./provision-credentials.sh SimpleGlobal-9200-0000-00-Employees/9200-XXXX-SG-Firstname-Lastname
+```
+
+This triggers the workflow, downloads the credential manifest, and loads everything into macOS Keychain. The employee then runs `/sg-mcp --auth` to obtain OAuth tokens.
+
+**Secret naming convention:**
+
+| Secret Name | Keychain Key | Account |
+|---|---|---|
+| `{P}_M365_CLIENT_ID` | `{P}-M365-Client-ID` | `m365-mcp` |
+| `{P}_M365_TENANT_ID` | `{P}-M365-Tenant-ID` | `m365-mcp` |
+| `{P}_M365_USER_ID` | `{P}-M365-User-ID` | `m365-mcp` |
+| `{P}_M365_CERTIFICATE` | `{P}-M365-Certificate` | `m365-mcp` |
+| `{P}_M365_PRIVATE_KEY` | `{P}-M365-Private-Key` | `m365-mcp` |
+| `{P}_M365_THUMBPRINT` | `{P}-M365-Thumbprint` | `m365-mcp` |
+| `{P}_XERO_CLIENT_ID` | `{P}-Xero-Client-ID` | `xero-mcp` |
+| `{P}_XERO_CLIENT_SECRET` | `{P}-Xero-Client-Secret` | `xero-mcp` |
+
+Profiles: `SM` (SimpleMotion), `SG` (SimpleGlobal), `SP` (Projects), `SA` (Architecture), `SI` (Industry), `SE` (Entertainment)
 
 ## Architecture
 
