@@ -3,11 +3,14 @@ set -euo pipefail
 
 # ============================================================================
 # Provision MCP Credentials
-# Downloads credentials from an employee repo's GitHub Actions artifact
-# and loads them into macOS Keychain for MCP server access.
+# Downloads credential TOML files from an employee repo's GitHub Actions
+# artifact and installs them for MCP server access.
 #
 # Usage: ./provision-credentials.sh <owner/repo>
 # Example: ./provision-credentials.sh SimpleGlobal-9200-0000-00-Employees/9200-0001-SG-Greg-Gowans
+#
+# The workflow produces .sm-mcp-m365.toml and .sm-mcp-xero.toml matching
+# the format used by /sg-mcp --load and --save.
 # ============================================================================
 
 EMPLOYEE_REPO="${1:?Usage: provision-credentials.sh <owner/repo>}"
@@ -16,8 +19,6 @@ fail() { echo "ERROR: $1" >&2; exit 1; }
 
 # Verify prerequisites
 command -v gh >/dev/null || fail "gh CLI not found. Install it first."
-command -v python3 >/dev/null || fail "python3 not found."
-command -v security >/dev/null || fail "macOS security command not found (not macOS?)."
 
 echo "=== Provision MCP Credentials ==="
 echo "Employee repo: $EMPLOYEE_REPO"
@@ -46,67 +47,42 @@ if ! gh run watch "$RUN_ID" --repo "$EMPLOYEE_REPO" --exit-status 2>/dev/null; t
     fail "Workflow run failed. Check: gh run view $RUN_ID --repo $EMPLOYEE_REPO"
 fi
 
-# Step 4: Download and load credentials
-echo "Step 4/4 — Downloading and loading credentials..."
+# Step 4: Download TOML files and install
+echo "Step 4/4 — Downloading and installing credentials..."
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-gh run download "$RUN_ID" --repo "$EMPLOYEE_REPO" --name mcp-credentials --dir "$TMPDIR"
+COUNT=0
 
-[ -f "$TMPDIR/credentials.json" ] || fail "credentials.json not found in artifact."
+# Download M365 credentials
+if gh run download "$RUN_ID" --repo "$EMPLOYEE_REPO" --name sg-mcp-m365 --dir "$TMPDIR/m365" 2>/dev/null; then
+    TOML_FILE="$TMPDIR/m365/sg-mcp-m365.toml"
+    if [ -f "$TOML_FILE" ]; then
+        cp "$TOML_FILE" "$HOME/.sg-mcp-m365.toml"
+        echo "  OK  ~/.sg-mcp-m365.toml installed"
+        COUNT=$((COUNT + 1))
+    fi
+else
+    echo "  --  No M365 credentials provisioned (no secrets set)"
+fi
 
-python3 << PYEOF
-import json, subprocess, base64, sys
-
-with open("$TMPDIR/credentials.json") as f:
-    manifest = json.load(f)
-
-if not manifest:
-    print("WARNING: Credential manifest is empty. No secrets set on the repo?")
-    sys.exit(0)
-
-count = 0
-errors = 0
-
-for service, profiles in manifest.items():
-    account = f"{service}-mcp"
-    svc_label = "M365" if service == "m365" else "Xero"
-
-    for profile, creds in profiles.items():
-        for key, value in creds.items():
-            keychain_service = f"{profile}-{svc_label}-{key}"
-            encoded = f"b64:{base64.b64encode(value.encode()).decode()}"
-
-            # Delete existing entry (ignore if not found)
-            subprocess.run(
-                ["security", "delete-generic-password",
-                 "-s", keychain_service, "-a", account],
-                capture_output=True
-            )
-
-            # Add new entry
-            result = subprocess.run(
-                ["security", "add-generic-password",
-                 "-s", keychain_service, "-a", account,
-                 "-w", encoded, "-T", "",
-                 "login.keychain-db"],
-                capture_output=True, text=True
-            )
-
-            if result.returncode == 0:
-                count += 1
-                print(f"  OK  {keychain_service} ({account})")
-            else:
-                errors += 1
-                print(f"  ERR {keychain_service}: {result.stderr.strip()}")
-
-print(f"\nLoaded {count} credentials into macOS Keychain.", end="")
-if errors:
-    print(f" ({errors} errors)")
-    sys.exit(1)
-else:
-    print()
-PYEOF
+# Download Xero credentials
+if gh run download "$RUN_ID" --repo "$EMPLOYEE_REPO" --name sg-mcp-xero --dir "$TMPDIR/xero" 2>/dev/null; then
+    TOML_FILE="$TMPDIR/xero/sg-mcp-xero.toml"
+    if [ -f "$TOML_FILE" ]; then
+        cp "$TOML_FILE" "$HOME/.sg-mcp-xero.toml"
+        echo "  OK  ~/.sg-mcp-xero.toml installed"
+        COUNT=$((COUNT + 1))
+    fi
+else
+    echo "  --  No Xero credentials provisioned (no secrets set)"
+fi
 
 echo ""
-echo "Done. MCP servers will use these credentials on next /sg-mcp --auth."
+if [ "$COUNT" -gt 0 ]; then
+    echo "Installed $COUNT credential file(s). Next steps:"
+    echo "  1. Run /sg-mcp --load to push credentials to macOS Keychain"
+    echo "  2. Run /sg-mcp --auth to obtain OAuth tokens"
+else
+    echo "No credential files were produced. Ensure an admin has set secrets on $EMPLOYEE_REPO."
+fi
