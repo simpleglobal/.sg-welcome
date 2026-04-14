@@ -9,7 +9,7 @@ set -euo pipefail
 # Usage: ./provision-credentials.sh <owner/repo>
 # Example: ./provision-credentials.sh SimpleGlobal-9200-0000-00-Employees/9200-0001-SG-Greg-Gowans
 #
-# The workflow produces .sm-mcp-m365.toml and .sm-mcp-xero.toml matching
+# The workflow produces .sg-mcp-m365.toml and .sg-mcp-xero.toml matching
 # the format used by /sg-mcp --load and --save.
 # ============================================================================
 
@@ -79,10 +79,128 @@ else
 fi
 
 echo ""
-if [ "$COUNT" -gt 0 ]; then
-    echo "Installed $COUNT credential file(s). Next steps:"
-    echo "  1. Run /sg-mcp --load to push credentials to macOS Keychain"
-    echo "  2. Run /sg-mcp --auth to obtain OAuth tokens"
-else
+if [ "$COUNT" -eq 0 ]; then
     echo "No credential files were produced. Ensure an admin has set secrets on $EMPLOYEE_REPO."
+    exit 0
 fi
+
+echo "Installed $COUNT credential file(s). Loading to macOS Keychain..."
+
+# Load each TOML into Keychain via the MCP set_credential tool, then delete
+for TOML in "$HOME/.sg-mcp-m365.toml" "$HOME/.sg-mcp-xero.toml"; do
+    [ -f "$TOML" ] || continue
+    SERVICE=$(basename "$TOML" .toml | sed 's/^\.//')  # sg-mcp-m365 or sg-mcp-xero
+
+    python3 << PYEOF
+import subprocess, base64, sys
+
+toml_path = "$TOML"
+service = "$SERVICE"
+account = "m365-mcp" if "m365" in service else "xero-mcp"
+svc_label = "M365" if "m365" in service else "Xero"
+
+# Simple TOML parser — handles the credential file format
+current_profile = None
+key_buf = None
+multiline_val = []
+in_multiline = False
+
+entries = {}  # {profile: {field: value}}
+
+with open(toml_path) as f:
+    for line in f:
+        stripped = line.strip()
+
+        if in_multiline:
+            if stripped.endswith('"""'):
+                multiline_val.append(line.rstrip().rstrip('"').rstrip('"').rstrip('"'))
+                entries.setdefault(current_profile, {})[key_buf] = "\n".join(multiline_val)
+                in_multiline = False
+                key_buf = None
+                multiline_val = []
+            else:
+                multiline_val.append(line.rstrip())
+            continue
+
+        if stripped.startswith("[profiles.") and stripped.endswith("]"):
+            current_profile = stripped[len("[profiles."):-1]
+            continue
+
+        if stripped.startswith("#") or not stripped or not current_profile:
+            continue
+
+        if "=" in stripped:
+            key, _, val = stripped.partition("=")
+            key = key.strip()
+            val = val.strip()
+
+            if val.startswith('"""'):
+                in_multiline = True
+                key_buf = key
+                remainder = val[3:]
+                if remainder.endswith('"""'):
+                    entries.setdefault(current_profile, {})[key] = remainder[:-3]
+                    in_multiline = False
+                    key_buf = None
+                else:
+                    multiline_val = [remainder] if remainder else []
+            elif val.startswith('"') and val.endswith('"'):
+                entries.setdefault(current_profile, {})[key] = val[1:-1]
+            else:
+                entries.setdefault(current_profile, {})[key] = val
+
+# Map TOML field names to Keychain key suffixes
+FIELD_MAP = {
+    "client_id": "Client-ID",
+    "tenant_id": "Tenant-ID",
+    "user_id": "User-ID",
+    "cert_thumbprint": "Thumbprint",
+    "cert_key": "Private-Key",
+    "cert": "Certificate",
+    "client_secret": "Client-Secret",
+}
+
+count = 0
+errors = 0
+for profile, fields in entries.items():
+    for field, value in fields.items():
+        suffix = FIELD_MAP.get(field)
+        if not suffix:
+            continue  # skip label and unknown fields
+
+        keychain_service = f"{profile}-{svc_label}-{suffix}"
+        encoded = f"b64:{base64.b64encode(value.encode()).decode()}"
+
+        subprocess.run(
+            ["security", "delete-generic-password", "-s", keychain_service, "-a", account],
+            capture_output=True
+        )
+        result = subprocess.run(
+            ["security", "add-generic-password", "-s", keychain_service, "-a", account,
+             "-w", encoded, "-T", "", "login.keychain-db"],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            count += 1
+            print(f"  OK  {keychain_service}")
+        else:
+            errors += 1
+            print(f"  ERR {keychain_service}: {result.stderr.strip()}")
+
+print(f"  Loaded {count} credentials from {service}", end="")
+if errors:
+    print(f" ({errors} errors)")
+else:
+    print()
+
+sys.exit(1 if errors else 0)
+PYEOF
+
+    # Delete the TOML file after loading to Keychain
+    rm -f "$TOML"
+    echo "  DEL $(basename "$TOML") removed (credentials now in Keychain only)"
+done
+
+echo ""
+echo "Done. TOML files deleted — credentials live in macOS Keychain only."
+echo "Run /sg-mcp --auth to obtain OAuth tokens."
